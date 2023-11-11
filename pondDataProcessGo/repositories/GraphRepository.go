@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
-	"log"
+	"go.uber.org/zap"
 	"pondDataProcessGo/models"
+	"pondDataProcessGo/utils"
 	"strings"
 )
 
 const (
-	url        = "bolt://3.93.75.179:7687"
+	url        = "bolt://memgraph-1198751972.us-east-1.elb.amazonaws.com:7687"
 	dbUsername = "pond"
 	dbPassword = "DiveIntoPond"
 )
@@ -19,7 +20,7 @@ func connectGraphDb() (*neo4j.DriverWithContext, context.Context, error) {
 	driver, err := neo4j.NewDriverWithContext(url, neo4j.BasicAuth(dbUsername, dbPassword, ""))
 	ctx := context.Background()
 	if err != nil {
-		log.Fatal("Failed to create Neo4j driver: ", err)
+		zap.L().Error("connectGraghDbError", zap.Errors("err", []error{err}))
 	}
 	return &driver, ctx, err
 }
@@ -32,7 +33,7 @@ type GraphRepository struct {
 func NewGraphRepository() *GraphRepository {
 	db, ctx, err := connectGraphDb()
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Error("NewGraphRepository", zap.Errors("err", []error{err}))
 	}
 	return &GraphRepository{
 		graphDb: db,
@@ -56,8 +57,10 @@ func (r *GraphRepository) MergeTwitterAccount(users []models.User) error {
 		id := user.ID
 		name := user.Name
 		query := fmt.Sprintf(cypher, username, followerCount, followingCount, id, name)
+		zap.L().Info("MergeTwitterAccount_cypher", zap.String("cypher", query))
 		_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, query, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 		if err != nil {
+			zap.L().Error("MergeTwitterAccount", zap.Errors("err", []error{err}))
 			return err
 		}
 	}
@@ -82,8 +85,13 @@ func (r *GraphRepository) MergeTwitterFollowing(user models.User, followUsers []
 		MERGE (source) -[e:TwitterFollowing]-> (target)
 	`, username, strings.ToLower(followUsers[i].Username))
 		}
+		//add log
+		if i == 0 {
+			zap.L().Info("MergeTwitterFollowing_cypher", zap.String("cypher", cypher))
+		}
 		_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 		if err != nil {
+			zap.L().Error("MergeTwitterFollowing", zap.Errors("err", []error{err}))
 			return err
 		}
 	}
@@ -98,9 +106,12 @@ func (r *GraphRepository) MergeTwitter2Person(newPersons []models.User) []int64 
 		MERGE (n)-[:Twitter2Person]->(p:Person)
 		RETURN id(p)
 	`, strings.ToLower(newPersons[i].Username))
+		if i == 0 {
+			zap.L().Info("MergeTwitter2Person_cypher", zap.String("cypher", cypher))
+		}
 		result, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 		if err != nil {
-			log.Fatal("Query execution failed: ", err)
+			zap.L().Error("MergeTwitter2Person", zap.Errors("err", []error{err}))
 		}
 		priId := result.Records[0].AsMap()["id(p)"].(int64)
 		nodesToAdd = append(nodesToAdd, priId)
@@ -114,15 +125,16 @@ func (r *GraphRepository) MergePerson2Person(user models.User, rType bool) {
 	if rType == false {
 		useType = "r2"
 	}
-	cypher := fmt.Sprintf(`MATCH (:TwitterAccount {{username: "%s"}})-[:Twitter2Person]->(p1:Person)
-MATCH (:TwitterAccount {{username: "{0}"}})<-[:TwitterFollowing]-(:TwitterAccount)-[:Twitter2Person]->(p2:Person)
+	cypher := fmt.Sprintf(`MATCH (:TwitterAccount {username: "%s"})-[:Twitter2Person]->(p1:Person)
+MATCH (:TwitterAccount {username: "%s"})<-[:TwitterFollowing]-(:TwitterAccount)-[:Twitter2Person]->(p2:Person)
 MERGE (p1)-[r1:Person2Person]->(p2)
 MERGE (p2)-[r2:Person2Person]->(p1) 
-SET %s.following=1`, strings.ToLower(user.Username), useType)
+SET %s.following=1`, strings.ToLower(user.Username), strings.ToLower(user.Username), useType)
+	zap.L().Info("MergePerson2Person_cypher", zap.String("cypher", cypher))
 
 	_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 	if err != nil {
-		log.Fatal("Query execution failed: ", err)
+		zap.L().Error("MergePerson2Person", zap.Errors("err", []error{err}))
 	}
 }
 
@@ -155,9 +167,11 @@ case when l1FiC > 0 and l2FeC > 0 and r1.lensFollowing = 1 then (1 + sqrt(l1FeC)
 	SET r1.distance = distance, r2.distance = distance
 	RETURN collect(id(p1)) as sources, collect(id(p2)) as targets, collect(r1.distance) as distances
 	`, strings.ToLower(user.Username))
+	zap.L().Info("UpdateComputeRelationStrength_cypher", zap.String("cypher", cypher))
+
 	result, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 	if err != nil {
-		log.Fatal("Query execution failed: ", err)
+		zap.L().Error("UpdateComputeRelationStrength", zap.Errors("err", []error{err}))
 	}
 	sources := result.Records[0].AsMap()["sources"].([]interface{})
 	targets := result.Records[0].AsMap()["targets"].([]interface{})
@@ -169,10 +183,10 @@ case when l1FiC > 0 and l2FeC > 0 and r1.lensFollowing = 1 then (1 + sqrt(l1FeC)
 		sourcesSlice = append(sourcesSlice, sources[i].(int64))
 	}
 	for i := 0; i < len(targets); i++ {
-		targetsSlice = append(targetsSlice, sources[i].(int64))
+		targetsSlice = append(targetsSlice, targets[i].(int64))
 	}
 	for i := 0; i < len(distances); i++ {
-		distanceSlice = append(distanceSlice, sources[i].(float64))
+		distanceSlice = append(distanceSlice, distances[i].(float64))
 	}
 	return sourcesSlice, targetsSlice, distanceSlice
 }
@@ -183,9 +197,10 @@ func (r *GraphRepository) AddNodesFromWithNodes(nodes []int64) {
 	YIELD nodes_added
 	RETURN nodes_added
 	`
+	zap.L().Info("AddNodesFromWithNodes_cypher", zap.String("cypher", cypher), zap.String("params", utils.Int64SliceToStringLimit5(nodes)), zap.Int("paramsLengths", len(nodes)))
 	_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, map[string]interface{}{"nodesToAdd": nodes}, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 	if err != nil {
-		log.Fatal("Query execution failed: ", err)
+		zap.L().Error("AddNodesFromWithNodes", zap.Errors("err", []error{err}))
 	}
 }
 
@@ -195,30 +210,46 @@ func (r *GraphRepository) AddNodesFromSourcesTargetsWeights(sources []int64, tar
 	YIELD edges_added
 	RETURN edges_added
 	`
+	zap.L().Info("AddNodesFromSourcesTargetsWeights_cypher", zap.String("cypher", cypher), zap.String("sourcesParams", utils.Int64SliceToStringLimit5(sources)), zap.Int("sourcesParamsLengths", len(sources)), zap.String("targetsParams", utils.Int64SliceToStringLimit5(targets)), zap.Int("targetsParamsLengths", len(targets)), zap.String("weightParams", utils.Float64SliceToStringLimit5(weights)), zap.Int("weightsParamsLengths", len(weights)))
+
 	_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, map[string]interface{}{
 		"sources": sources,
 		"targets": targets,
 		"weights": weights,
 	}, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 	if err != nil {
-		log.Fatal("query execution failed: ", err)
+		zap.L().Error("AddNodesFromSourcesTargetsWeights", zap.Errors("err", []error{err}))
 	}
 
 }
 
+func (r *GraphRepository) GetTwitterAccountInfo(name string) int64 {
+	cypher := fmt.Sprintf(`MATCH (p:TwitterAccount {username: "%s"}) return id(p)`, strings.ToLower(name))
+	zap.L().Info("GetTwitterAccountInfo_cypher", zap.String("cypher", cypher))
+	ret, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+	if err != nil {
+		zap.L().Error("GetTwitterAccountInfo", zap.Errors("err", []error{err}))
+	}
+	return ret.Records[0].AsMap()["id(p)"].(int64)
+	//fmt.Println(ret.Records[0].AsMap()[""].(int64))
+}
+
 func (r *GraphRepository) EasyTest() {
+	user := models.User{}
+	user.Username = "colinpond5362"
+	r.MergePerson2Person(user, true)
 	//session := (*r.graphDb).NewSession(r.ctx, neo4j.SessionConfig{DatabaseName: ""})
 	//defer session.Close(r.ctx)
 	//cypher := "MATCH (p:Person) return id(p),p limit 1"
-	cypher := "MATCH (p:Person) WHERE (id(p)>= 3684988 AND id(p)<=3684999) return collect(id(p)) as sources"
-	result, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
-	if err != nil {
-		panic(err)
-	}
-	sources := result.Records[0].AsMap()["sources"].([]interface{})
-	for i := 0; i < len(sources); i++ {
-		fmt.Println(sources[i].(int64))
-	}
+	//cypher := "MATCH (p:Person) WHERE (id(p)>= 3684988 AND id(p)<=3684999) return collect(id(p)) as sources"
+	//result, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+	//if err != nil {
+	//	panic(err)
+	//}
+	//sources := result.Records[0].AsMap()["sources"].([]interface{})
+	//for i := 0; i < len(sources); i++ {
+	//	fmt.Println(sources[i].(int64))
+	//}
 	//fmt.Println(result.Records[0].AsMap()["collect(id(p))"].([]int))
 	//result, err := session.Run(r.ctx, cypher, nil)
 	//fmt.Println(result.Record())

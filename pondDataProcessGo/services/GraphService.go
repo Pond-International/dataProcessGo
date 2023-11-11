@@ -48,3 +48,7 @@ func (s *GraphService) AddNodesFromWithNodes(nodes []int64) {
 func (s *GraphService) AddNodesFromSourcesTargetsWeights(sources []int64, targets []int64, weights []float64) {
 	s.graphRepository.AddNodesFromSourcesTargetsWeights(sources, targets, weights)
 }
+
+func (s *GraphService) GetTwitterAccountInfo(name string) int64 {
+	return s.graphRepository.GetTwitterAccountInfo(name)
+}

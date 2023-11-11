@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -28,7 +29,7 @@ func (s *TwitterService) GetUserInfoByID(userIDSlice []int64) []models.User {
 	url := fmt.Sprintf("https://api.twitter.com/2/users?ids=%s&user.fields=id,name,username,created_at,description,profile_image_url,public_metrics", userIDs)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Error("GetUserInfoByID", zap.Errors("err", []error{err}))
 		return nil
 	}
 	req.Header.Set("Authorization", "Bearer "+bearToken)
@@ -37,21 +38,21 @@ func (s *TwitterService) GetUserInfoByID(userIDSlice []int64) []models.User {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Error("GetUserInfoByID", zap.Errors("err", []error{err}))
 		return nil
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Error("GetUserInfoByID", zap.Errors("err", []error{err}))
 		return nil
 	}
 	bodyStr := string(body)
 	var response models.Response
 	err = json.Unmarshal([]byte(bodyStr), &response)
 	if err != nil {
-		fmt.Println("Error unmarshalling JSON:", err)
+		zap.L().Error("GetUserInfoByID", zap.Errors("err", []error{err}))
 		return nil
 	}
 	return response.Data
@@ -73,13 +74,13 @@ func (s *TwitterService) GetFollowIdsByUserId(userId string, fType bool) []int64
 	var idsRes models.TwitterToolResponse
 	err := json.Unmarshal([]byte(bodystr), &idsRes)
 	if err != nil {
-		fmt.Println("Error:", err)
+		zap.L().Error("GetFollowIdsByUserId", zap.Errors("err", []error{err}))
 		return nil
 	}
 	var idsData models.TwitterIds
 	err = json.Unmarshal([]byte(idsRes.Data), &idsData)
 	if err != nil {
-		fmt.Println("Error:", err)
+		zap.L().Error("GetFollowIdsByUserId", zap.Errors("err", []error{err}))
 		return nil
 	}
 	return idsData.Ids
