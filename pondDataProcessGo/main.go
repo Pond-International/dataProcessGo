@@ -26,6 +26,8 @@ func main() {
 
 	app.GET("/graph/twitterInfo", graphControllers.GetTwitterAccountInfo)
 
+	app.GET("/twitter/user/picUrl", twitterControllers.UserPicByIds)
+
 	zap.L().Info("zap_log")
-	app.Run(":8082")
+	app.Run(":8092")
 }

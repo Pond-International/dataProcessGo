@@ -28,12 +28,12 @@ func (mc *ProcessController) NewUserProcess(ctx *gin.Context) {
 	twitterId := ctx.PostForm("twitterId")
 	zap.L().Info("NewUserProcess/startNewUserProcess", zap.String("twitterId", twitterId))
 	twitterIdInt64, _ := strconv.ParseInt(twitterId, 10, 64)
-	userInfo := mc.twitterService.GetUserInfoByID([]int64{twitterIdInt64})[0]
+	userInfo := mc.twitterService.GetUserInfoByID([]int64{twitterIdInt64}, []string{})[0]
 	zap.L().Info("NewUserProcess/getUserInfo", zap.String("username", userInfo.Username))
 	followerIds := mc.twitterService.GetFollowIdsByUserId(twitterId, true)
 	followingIds := mc.twitterService.GetFollowIdsByUserId(twitterId, false)
-	followersInfo := mc.twitterService.GetUserInfoByID(followerIds)
-	followingsInfo := mc.twitterService.GetUserInfoByID(followingIds)
+	followersInfo := mc.twitterService.GetUserInfoByID(followerIds, []string{})
+	followingsInfo := mc.twitterService.GetUserInfoByID(followingIds, []string{})
 	zap.L().Info("NewUserProcess/getFollowInfo", zap.String("username", userInfo.Username), zap.Int("followerCount", len(followerIds)), zap.Int("followingCount", len(followingIds)))
 
 	//add twitterAccount

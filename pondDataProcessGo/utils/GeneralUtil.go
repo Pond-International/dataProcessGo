@@ -25,6 +25,19 @@ func Int64SliceToStringLimit5(slice []int64) string {
 	return strings.Join(strSlice, ",")
 }
 
+func StringSliceToIntSlice(strs string) ([]int64, error) {
+	strSlice := strings.Split(strs, ",")
+	var intSlice []int64
+	for _, str := range strSlice {
+		num, err := strconv.ParseInt(str, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		intSlice = append(intSlice, num)
+	}
+	return intSlice, nil
+}
+
 func Float64SliceToStringLimit5(slice []float64) string {
 	var strSlice []string
 	for i, v := range slice {

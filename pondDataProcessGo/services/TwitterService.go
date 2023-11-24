@@ -23,10 +23,19 @@ func NewTwitterService() *TwitterService {
 	return &TwitterService{}
 }
 
-func (s *TwitterService) GetUserInfoByID(userIDSlice []int64) []models.User {
+func (s *TwitterService) GetUserInfoByID(userIDSlice []int64, infoType []string) []models.User {
 	userIDs := utils.Int64SliceToString(userIDSlice)
 	//使用twitter官方api
-	url := fmt.Sprintf("https://api.twitter.com/2/users?ids=%s&user.fields=id,name,username,created_at,description,profile_image_url,public_metrics", userIDs)
+	var url string
+	if len(infoType) == 0 {
+		url = fmt.Sprintf("https://api.twitter.com/2/users?ids=%s&user.fields=id,name,username,created_at,description,profile_image_url,public_metrics", userIDs)
+	} else {
+		url = fmt.Sprintf("https://api.twitter.com/2/users?ids=%s&user.fields=id", userIDs)
+		for i := 0; i < len(infoType); i++ {
+			url += ","
+			url += infoType[i]
+		}
+	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		zap.L().Error("GetUserInfoByID", zap.Errors("err", []error{err}))

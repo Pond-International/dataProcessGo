@@ -14,6 +14,14 @@ const (
 	url        = "bolt://memgraph-1198751972.us-east-1.elb.amazonaws.com:7687"
 	dbUsername = "pond"
 	dbPassword = "DiveIntoPond"
+
+	mainurl      = "bolt://3.93.75.179:7687"
+	mainUsername = "pond"
+	mainPassword = "DiveIntoPond"
+
+	replicaurl      = "bolt://3.235.197.38:7687"
+	replicaname     = "pond"
+	replicaPassword = "DiveIntoPond"
 )
 
 func connectGraphDb() (*neo4j.DriverWithContext, context.Context, error) {
@@ -25,9 +33,31 @@ func connectGraphDb() (*neo4j.DriverWithContext, context.Context, error) {
 	return &driver, ctx, err
 }
 
+func connectMainGraphDb() (*neo4j.DriverWithContext, context.Context, error) {
+	driver, err := neo4j.NewDriverWithContext(mainurl, neo4j.BasicAuth(mainUsername, mainPassword, ""))
+	ctx := context.Background()
+	if err != nil {
+		zap.L().Error("connectMainGraghDbError", zap.Errors("err", []error{err}))
+	}
+	return &driver, ctx, err
+}
+
+func connectReplicaGraphDb() (*neo4j.DriverWithContext, context.Context, error) {
+	driver, err := neo4j.NewDriverWithContext(replicaurl, neo4j.BasicAuth(replicaname, replicaPassword, ""))
+	ctx := context.Background()
+	if err != nil {
+		zap.L().Error("connectRepGraghDbError", zap.Errors("err", []error{err}))
+	}
+	return &driver, ctx, err
+}
+
 type GraphRepository struct {
-	graphDb *neo4j.DriverWithContext
-	ctx     context.Context
+	graphDb     *neo4j.DriverWithContext
+	ctx         context.Context
+	mainGraphDb *neo4j.DriverWithContext
+	mainCtx     context.Context
+	repGraphDb  *neo4j.DriverWithContext
+	repCtx      context.Context
 }
 
 func NewGraphRepository() *GraphRepository {
@@ -35,9 +65,21 @@ func NewGraphRepository() *GraphRepository {
 	if err != nil {
 		zap.L().Error("NewGraphRepository", zap.Errors("err", []error{err}))
 	}
+	mainDb, mainCtx, err := connectMainGraphDb()
+	if err != nil {
+		zap.L().Error("NewMainGraphRepository", zap.Errors("err", []error{err}))
+	}
+	repDb, repCtx, err := connectReplicaGraphDb()
+	if err != nil {
+		zap.L().Error("NewRepGraphRepository", zap.Errors("err", []error{err}))
+	}
 	return &GraphRepository{
-		graphDb: db,
-		ctx:     ctx,
+		graphDb:     db,
+		ctx:         ctx,
+		mainGraphDb: mainDb,
+		mainCtx:     mainCtx,
+		repGraphDb:  repDb,
+		repCtx:      repCtx,
 	}
 }
 
@@ -58,7 +100,7 @@ func (r *GraphRepository) MergeTwitterAccount(users []models.User) error {
 		name := user.Name
 		query := fmt.Sprintf(cypher, username, followerCount, followingCount, id, name)
 		zap.L().Info("MergeTwitterAccount_cypher", zap.String("cypher", query))
-		_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, query, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+		_, err := neo4j.ExecuteQuery(r.mainCtx, *r.mainGraphDb, query, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 		if err != nil {
 			zap.L().Error("MergeTwitterAccount", zap.Errors("err", []error{err}))
 			return err
@@ -89,7 +131,7 @@ func (r *GraphRepository) MergeTwitterFollowing(user models.User, followUsers []
 		if i == 0 {
 			zap.L().Info("MergeTwitterFollowing_cypher", zap.String("cypher", cypher))
 		}
-		_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+		_, err := neo4j.ExecuteQuery(r.mainCtx, *r.mainGraphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 		if err != nil {
 			zap.L().Error("MergeTwitterFollowing", zap.Errors("err", []error{err}))
 			return err
@@ -109,7 +151,7 @@ func (r *GraphRepository) MergeTwitter2Person(newPersons []models.User) []int64 
 		if i == 0 {
 			zap.L().Info("MergeTwitter2Person_cypher", zap.String("cypher", cypher))
 		}
-		result, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+		result, err := neo4j.ExecuteQuery(r.mainCtx, *r.mainGraphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 		if err != nil {
 			zap.L().Error("MergeTwitter2Person", zap.Errors("err", []error{err}))
 		}
@@ -132,7 +174,7 @@ MERGE (p2)-[r2:Person2Person]->(p1)
 SET %s.following=1`, strings.ToLower(user.Username), strings.ToLower(user.Username), useType)
 	zap.L().Info("MergePerson2Person_cypher", zap.String("cypher", cypher))
 
-	_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+	_, err := neo4j.ExecuteQuery(r.mainCtx, *r.mainGraphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 	if err != nil {
 		zap.L().Error("MergePerson2Person", zap.Errors("err", []error{err}))
 	}
@@ -169,7 +211,7 @@ case when l1FiC > 0 and l2FeC > 0 and r1.lensFollowing = 1 then (1 + sqrt(l1FeC)
 	`, strings.ToLower(user.Username))
 	zap.L().Info("UpdateComputeRelationStrength_cypher", zap.String("cypher", cypher))
 
-	result, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+	result, err := neo4j.ExecuteQuery(r.mainCtx, *r.mainGraphDb, cypher, nil, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 	if err != nil {
 		zap.L().Error("UpdateComputeRelationStrength", zap.Errors("err", []error{err}))
 	}
@@ -198,7 +240,11 @@ func (r *GraphRepository) AddNodesFromWithNodes(nodes []int64) {
 	RETURN nodes_added
 	`
 	zap.L().Info("AddNodesFromWithNodes_cypher", zap.String("cypher", cypher), zap.String("params", utils.Int64SliceToStringLimit5(nodes)), zap.Int("paramsLengths", len(nodes)))
-	_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, map[string]interface{}{"nodesToAdd": nodes}, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+	_, err := neo4j.ExecuteQuery(r.mainCtx, *r.mainGraphDb, cypher, map[string]interface{}{"nodesToAdd": nodes}, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+	if err != nil {
+		zap.L().Error("AddNodesFromWithNodes", zap.Errors("err", []error{err}))
+	}
+	_, err = neo4j.ExecuteQuery(r.repCtx, *r.repGraphDb, cypher, map[string]interface{}{"nodesToAdd": nodes}, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
 	if err != nil {
 		zap.L().Error("AddNodesFromWithNodes", zap.Errors("err", []error{err}))
 	}
@@ -212,7 +258,15 @@ func (r *GraphRepository) AddNodesFromSourcesTargetsWeights(sources []int64, tar
 	`
 	zap.L().Info("AddNodesFromSourcesTargetsWeights_cypher", zap.String("cypher", cypher), zap.String("sourcesParams", utils.Int64SliceToStringLimit5(sources)), zap.Int("sourcesParamsLengths", len(sources)), zap.String("targetsParams", utils.Int64SliceToStringLimit5(targets)), zap.Int("targetsParamsLengths", len(targets)), zap.String("weightParams", utils.Float64SliceToStringLimit5(weights)), zap.Int("weightsParamsLengths", len(weights)))
 
-	_, err := neo4j.ExecuteQuery(r.ctx, *r.graphDb, cypher, map[string]interface{}{
+	_, err := neo4j.ExecuteQuery(r.mainCtx, *r.mainGraphDb, cypher, map[string]interface{}{
+		"sources": sources,
+		"targets": targets,
+		"weights": weights,
+	}, neo4j.EagerResultTransformer, neo4j.ExecuteQueryWithDatabase(""))
+	if err != nil {
+		zap.L().Error("AddNodesFromSourcesTargetsWeights", zap.Errors("err", []error{err}))
+	}
+	_, err = neo4j.ExecuteQuery(r.repCtx, *r.repGraphDb, cypher, map[string]interface{}{
 		"sources": sources,
 		"targets": targets,
 		"weights": weights,
