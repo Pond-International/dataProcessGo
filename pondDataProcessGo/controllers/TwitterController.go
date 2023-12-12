@@ -53,6 +53,11 @@ func (mc *TwitterController) UserPicByIds(ctx *gin.Context) {
 	}
 }
 
+func (mc *TwitterController) GetUserFollowings(ctx *gin.Context) {
+	id := ctx.Query("tid")
+	ctx.JSON(200, mc.twitterService.GetFollowIdsByUserId(id, false))
+}
+
 func (mc *TwitterController) Hello(ctx *gin.Context) {
 
 	//mc.twitterService.GetFollowersByUserId("913499519593172992")
