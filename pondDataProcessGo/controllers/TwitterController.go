@@ -1,10 +1,12 @@
 package controllers
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"pondDataProcessGo/services"
 	"pondDataProcessGo/utils"
 	"strconv"
+	"strings"
 )
 
 type TwitterController struct {
@@ -19,8 +21,18 @@ func NewTwitterController() *TwitterController {
 
 func (mc *TwitterController) UserInfoById(ctx *gin.Context) {
 	tidstr := ctx.Query("tid")
-	tid, _ := strconv.ParseInt(tidstr, 10, 64)
-	user := mc.twitterService.GetUserInfoByID([]int64{tid}, []string{})
+	tidList := strings.Split(tidstr, ",")
+	var tidIntList []int64
+
+	for _, tid := range tidList {
+		tidInt, err := strconv.ParseInt(tid, 10, 64)
+		if err != nil {
+			fmt.Println("Error converting", tid, "to int64:", err)
+			continue
+		}
+		tidIntList = append(tidIntList, tidInt)
+	}
+	user := mc.twitterService.GetUserInfoByID(tidIntList, []string{})
 	if user != nil {
 		ctx.JSON(200, user)
 	} else {
